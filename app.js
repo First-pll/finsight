@@ -652,6 +652,13 @@ function init() {
     mask.addEventListener('click', e => { if (e.target === mask) mask.hidden = true; });
   });
 
+  // 按 Esc 键关闭所有弹窗
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-mask').forEach(m => { if (!m.hidden) m.hidden = true; });
+    }
+  });
+
   // 输入时自动清除错误提示
   ['txAmount', 'txDate', 'goalName', 'goalTarget', 'goalCurrent'].forEach(id => {
     const el = $(id);
