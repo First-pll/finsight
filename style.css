@@ -206,6 +206,7 @@ body {
   position:fixed; inset:0; background: rgba(5,10,22,.40); backdrop-filter: blur(2px);
   display:flex; align-items:center; justify-content:center; z-index:100;
 }
+.modal-mask[hidden] { display: none !important; }
 .modal {
   width: 400px; max-width: 92vw; max-height: 90vh; overflow:auto;
   background: var(--card); border:1px solid var(--border); border-radius:16px;

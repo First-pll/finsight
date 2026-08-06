@@ -27,7 +27,6 @@ let state = {
 };
 let currentMonth = todayStr().slice(0, 7); // 'YYYY-MM'
 let editingTxId = null;
-let editingGoalId = null;
 let charts = {};
 
 /* ---------- 工具 ---------- */
@@ -432,7 +431,7 @@ function saveBudget() {
 function renderGoals() {
   const grid = $('goalGrid');
   if (!state.goals.length) {
-    grid.innerHTML = `<div class="card empty" style="grid-column:1/-1"><span class="big">🎯</span>还没有储蓄目标<br>点击「新建目标」设定一个，比如应急基金、旅行基金</div>`;
+    grid.innerHTML = `<div class="card empty" style="grid-column:1/-1"><span class="big">🎯</span>还没有储蓄目标<br>可通过「数据管理 → 导入数据」添加</div>`;
     return;
   }
   grid.innerHTML = state.goals.map(g => {
@@ -454,34 +453,12 @@ function renderGoals() {
         <span>已存 <b>${fmtMoney0(g.current)}</b></span>
         <span class="goal-pct" style="color:${pct >= 100 ? 'var(--income)' : 'var(--accent)'}">${pct.toFixed(0)}%</span>
       </div>
-      <div class="budget-bar"><div class="budget-fill ${pct >= 100 ? 'ok' : 'ok'}" style="width:${pct}%"></div></div>
+      <div class="budget-bar"><div class="budget-fill ok" style="width:${pct}%"></div></div>
       <div class="muted" style="font-size:12px; margin-top:9px;">目标 ${fmtMoney0(g.target)}${deadline}</div>
       <div class="muted" style="font-size:12px; margin-top:3px;">按近6月平均月结余估算：还需约 ${eta}</div>
       ${pct >= 100 ? '<div style="color:var(--income);font-size:12px;margin-top:6px;font-weight:600;">🎉 目标已达成！</div>' : ''}
-      <div class="goal-actions">
-        <button class="btn btn-ghost" data-goal-edit="${g.id}">✎ 编辑</button>
-        <button class="btn btn-ghost" data-goal-add="${g.id}">＋ 存一笔</button>
-        <button class="btn btn-danger" data-goal-del="${g.id}">删除</button>
-      </div>
     </div>`;
   }).join('');
-  grid.querySelectorAll('[data-goal-edit]').forEach(b => b.onclick = () => openGoalModal(b.dataset.goal-edit));
-  grid.querySelectorAll('[data-goal-del]').forEach(b => b.onclick = () => {
-    if (confirm('确定删除这个目标吗？')) {
-      state.goals = state.goals.filter(x => x.id !== b.dataset.goal-del);
-      save(); renderGoals();
-    }
-  });
-  grid.querySelectorAll('[data-goal-add]').forEach(b => b.onclick = () => {
-    const g = state.goals.find(x => x.id === b.dataset.goal-add);
-    if (!g) return;
-    const amt = prompt(`向「${g.name}」存入多少金额？(¥)`, '500');
-    if (amt === null) return;
-    const v = parseFloat(amt);
-    if (!(v > 0)) { alert('金额无效'); return; }
-    g.current = Number(g.current) + v;
-    save(); renderGoals();
-  });
 }
 function avgMonthlyNet(n) {
   const months = [];
@@ -489,38 +466,6 @@ function avgMonthlyNet(n) {
   const nets = months.map(m => monthStats(m).net);
   const avg = nets.reduce((a, b) => a + b, 0) / n;
   return avg > 0 ? avg : 0;
-}
-function openGoalModal(id) {
-  editingGoalId = id || null;
-  $('goalModalTitle').textContent = id ? '编辑储蓄目标' : '新建储蓄目标';
-  const g = id ? state.goals.find(x => x.id === id) : null;
-  $('goalName').value = g ? g.name : '';
-  $('goalTarget').value = g ? g.target : '';
-  $('goalCurrent').value = g ? g.current : '';
-  $('goalDeadline').value = g ? (g.deadline || '') : '';
-  $('goalModal').hidden = false;
-}
-function saveGoal() {
-  const name = $('goalName').value.trim();
-  const target = parseFloat($('goalTarget').value);
-  const current = parseFloat($('goalCurrent').value) || 0;
-  const deadline = $('goalDeadline').value || '';
-  if (!name) { formError($('goalName'), '请输入目标名称'); return; }
-  if (!(target > 0)) { formError($('goalTarget'), '请输入有效的目标金额'); return; }
-  const emojis = ['🎯', '🚀', '🏝️', '💎', '🏠', '🎓', '💻', '🚗'];
-  const rec = { name, target, current, deadline, emoji: emojis[state.goals.length % emojis.length] };
-  if (editingGoalId) {
-    const i = state.goals.findIndex(x => x.id === editingGoalId);
-    if (i >= 0) state.goals[i] = { ...state.goals[i], ...rec };
-  } else {
-    state.goals.push({ id: uid(), ...rec });
-  }
-  save(); $('goalModal').hidden = true; showToast('目标已保存 ✓'); renderGoals();
-  // 保存后自动滚动到目标卡片区，让用户立刻看到新目标
-  setTimeout(() => {
-    const grid = $('goalGrid');
-    if (grid && grid.scrollIntoView) grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 120);
 }
 
 /* ================= 数据管理 ================= */
@@ -635,9 +580,7 @@ function init() {
   $('btnEditBudget').onclick = openBudgetModal;
   $('budgetSave').onclick = saveBudget;
 
-  // 目标
-  $('btnAddGoal').onclick = () => openGoalModal(null);
-  $('goalSave').onclick = saveGoal;
+  // 目标（新建/编辑/存一笔入口已全部移除，仅展示已有目标）
 
   // 数据
   $('btnExport').onclick = exportData;
@@ -664,6 +607,9 @@ function init() {
     const el = $(id);
     el.addEventListener('input', () => formClearError(el));
   });
+
+  // 保险：无论页面以什么状态加载（浏览器可能恢复上次会话、弹窗残留），强制全部关闭
+  document.querySelectorAll('.modal-mask').forEach(m => { m.hidden = true; });
 
   refresh();
 }
