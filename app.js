@@ -1,421 +1,276 @@
-/* ================= FinSight · 核心逻辑 ================= */
+/* ================= FinSight 个人理财仪表盘 =================
+   纯前端 + localStorage。无弹窗、无 alert/prompt/confirm，所有操作内联反馈。 */
 'use strict';
 
-/* ---------- 分类定义 ---------- */
+/* ---------- 状态 ---------- */
 const EXPENSE_CATS = [
-  { name: '餐饮', emoji: '🍜' }, { name: '交通', emoji: '🚇' },
-  { name: '购物', emoji: '🛍️' }, { name: '娱乐', emoji: '🎮' },
-  { name: '住房', emoji: '🏠' }, { name: '水电', emoji: '💡' },
-  { name: '医疗', emoji: '💊' }, { name: '教育', emoji: '📚' },
-  { name: '人情', emoji: '🎁' }, { name: '其他', emoji: '📦' },
+  { name: '餐饮', emoji: '🍜' }, { name: '交通', emoji: '🚌' }, { name: '购物', emoji: '🛍️' },
+  { name: '娱乐', emoji: '🎮' }, { name: '住房', emoji: '🏠' }, { name: '水电', emoji: '💡' },
+  { name: '教育', emoji: '📚' }, { name: '其他', emoji: '📦' },
 ];
 const INCOME_CATS = [
-  { name: '工资', emoji: '💼' }, { name: '奖金', emoji: '🏆' },
-  { name: '理财收益', emoji: '📈' }, { name: '兼职', emoji: '🧩' },
-  { name: '其他', emoji: '💰' },
+  { name: '工资', emoji: '💼' }, { name: '兼职', emoji: '🧑‍💻' }, { name: '其他', emoji: '💰' },
 ];
-const CAT_EMOJI = {};
-[...EXPENSE_CATS, ...INCOME_CATS].forEach(c => CAT_EMOJI[c.name] = c.emoji);
+const LS_KEY = 'finsight_state_v1';
 
-const STORAGE_KEY = 'finsight.v1';
+let state = { transactions: [], budgets: {} };
+try {
+  const raw = localStorage.getItem(LS_KEY);
+  if (raw) { const parsed = JSON.parse(raw); if (parsed && Array.isArray(parsed.transactions)) state = parsed; }
+} catch (e) { /* 数据损坏则用空状态 */ }
 
-/* ---------- 状态 ---------- */
-let state = {
-  transactions: [],   // {id, type, category, amount, date:'YYYY-MM-DD', note}
-  budgets: {},        // {category: amount}
-  goals: [],          // {id, name, target, current, deadline, emoji}
-};
-let currentMonth = todayStr().slice(0, 7); // 'YYYY-MM'
-let editingTxId = null;
+let currentMonth = todayStr().slice(0, 7);
 let charts = {};
 
 /* ---------- 工具 ---------- */
 function todayStr() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
-function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function fmtMoney(n) {
-  return '¥' + Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const v = Number(n) || 0;
+  return '¥' + v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function fmtMoney0(n) {
-  return '¥' + Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 0 });
+  const v = Number(n) || 0;
+  return '¥' + v.toLocaleString('zh-CN', { maximumFractionDigits: 0 });
 }
-function monthLabel(m) {
-  const [y, mo] = m.split('-');
-  return `${y}年${Number(mo)}月`;
+function $(id) { return document.getElementById(id); }
+function shiftMonth(ym, delta) {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 }
-function shiftMonth(m, delta) {
-  const [y, mo] = m.split('-').map(Number);
-  const d = new Date(y, mo - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-}
-function catOf(name) {
-  return [...EXPENSE_CATS, ...INCOME_CATS].find(c => c.name === name) || { name, emoji: '📌' };
-}
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function monthLabel(ym) { return ym.slice(0, 4) + '年' + Number(ym.slice(5, 7)) + '月'; }
+
+function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) { /* 存储满时静默 */ } }
+
+/* ---------- toast 反馈 ---------- */
+let toastTimer = null;
+function showToast(msg) {
+  let t = $('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-/* ---------- 持久化 ---------- */
-function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-function load() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      state = { transactions: [], budgets: {}, goals: [], ...parsed };
-    }
-  } catch (e) { console.warn('数据读取失败', e); }
-}
-
-/* ---------- 统计 ---------- */
-function monthTx(m) {
-  return state.transactions.filter(t => t.date.slice(0, 7) === m);
-}
-function sumBy(txs, type) {
-  return txs.filter(t => t.type === type).reduce((s, t) => s + Number(t.amount), 0);
-}
-function monthStats(m) {
-  const txs = monthTx(m);
-  const income = sumBy(txs, 'income');
-  const expense = sumBy(txs, 'expense');
-  return { income, expense, net: income - expense };
-}
-function monthSeries(months) {
-  return months.map(m => {
-    const s = monthStats(m);
-    return { m, ...s };
-  });
-}
-function expenseByCat(m) {
-  const map = {};
-  monthTx(m).filter(t => t.type === 'expense').forEach(t => {
-    map[t.category] = (map[t.category] || 0) + Number(t.amount);
-  });
-  return map;
-}
-function totalGoalProgress() {
-  if (!state.goals.length) return null;
-  const t = state.goals.reduce((a, g) => a + Number(g.target), 0);
-  const c = state.goals.reduce((a, g) => a + Number(g.current), 0);
-  return { current: c, target: t, pct: t > 0 ? Math.min(100, c / t * 100) : 0 };
-}
-
-/* ---------- DOM 助手 ---------- */
-const $ = id => document.getElementById(id);
-function renderNav() { /* 占位 */ }
-
-/* ================= 视图切换 ================= */
-function switchView(name) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  $('view-' + name).classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(b => {
-    b.classList.toggle('active', b.dataset.view === name);
-  });
-  if (name === 'dashboard') renderDashboard();
-  if (name === 'transactions') renderTxTable();
-  if (name === 'budget') renderBudget();
-  if (name === 'goals') renderGoals();
-}
-
-/* ================= 总览 ================= */
-function renderDashboard() {
-  const s = monthStats(currentMonth);
-  const prev = monthStats(shiftMonth(currentMonth, -1));
-  $('kpiIncome').textContent = fmtMoney0(s.income);
-  $('kpiExpense').textContent = fmtMoney0(s.expense);
-  $('kpiNet').textContent = fmtMoney0(s.net);
-  $('kpiNet').style.color = s.net >= 0 ? 'var(--income)' : 'var(--expense)';
-  $('kpiIncomeTrend').textContent = trendText(s.income, prev.income);
-  $('kpiExpenseTrend').textContent = trendText(s.expense, prev.expense);
-  $('kpiNetTrend').textContent = `上月结余 ${fmtMoney0(prev.net)}`;
-
-  const g = totalGoalProgress();
-  if (g) {
-    $('kpiGoal').textContent = `${g.pct.toFixed(0)}%`;
-    $('kpiGoalBar').style.width = g.pct + '%';
-  } else {
-    $('kpiGoal').textContent = '未设置';
-    $('kpiGoalBar').style.width = '0%';
-  }
-
-  // 近6个月趋势
-  const months = [];
-  for (let i = 5; i >= 0; i--) months.push(shiftMonth(currentMonth, -i));
-  const series = monthSeries(months);
-  drawTrend(series);
-  drawPie(expenseByCat(currentMonth));
-
-  // 最近交易
-  const recent = [...state.transactions]
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 7);
-  const box = $('recentTx');
-  if (!recent.length) {
-    box.innerHTML = `<div class="empty"><span class="big">🍃</span>还没有交易记录<br>点右上角「记一笔」开始，或到数据管理载入示例数据</div>`;
-  } else {
-    box.innerHTML = recent.map(txRowHTML).join('');
-    box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => delTx(b.dataset.del));
-    box.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openTxModal(b.dataset.edit));
-  }
-}
-function trendText(cur, prev) {
-  if (prev === 0) return cur > 0 ? '较上月 +100%' : '—';
-  const pct = ((cur - prev) / prev) * 100;
-  const sign = pct >= 0 ? '+' : '';
-  return `较上月 ${sign}${pct.toFixed(1)}%`;
-}
-
-/* ---------- 图表 ---------- */
-function mkChart(id, cfg) {
-  if (charts[id]) { charts[id].destroy(); }
-  charts[id] = new Chart($(id), cfg);
-}
-function drawTrend(series) {
-  const labels = series.map(s => s.m.slice(5) + '月');
-  mkChart('chartTrend', {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: '收入', data: series.map(s => +s.income.toFixed(2)),
-          borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.12)',
-          fill: true, tension: .4, borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: '#34d399',
-        },
-        {
-          label: '支出', data: series.map(s => +s.expense.toFixed(2)),
-          borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,.10)',
-          fill: true, tension: .4, borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: '#f87171',
-        },
-      ],
-    },
-    options: baseOpts({
-      plugins: { legend: { labels: { color: '#8b9ac2', usePointStyle: true, boxWidth: 8 } } },
-      scales: {
-        x: { ticks: { color: '#8b9ac2' }, grid: { color: 'rgba(36,50,82,.35)' } },
-        y: { ticks: { color: '#8b9ac2', callback: v => '¥' + v }, grid: { color: 'rgba(36,50,82,.35)' } },
-      },
-    }),
-  });
-}
-function drawPie(catMap) {
-  const entries = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
-  if (!entries.length) {
-    mkChart('chartPie', {
-      type: 'doughnut',
-      data: { labels: ['暂无数据'], datasets: [{ data: [1], backgroundColor: ['#3a4a73'] }] },
-      options: baseOpts({ plugins: { legend: { display: false } } }),
-    });
-    return;
-  }
-  const palette = ['#34d399', '#2dd4bf', '#60a5fa', '#a78bfa', '#f472b6', '#fbbf24', '#fb923c', '#f87171', '#22d3ee', '#94a3b8'];
-  mkChart('chartPie', {
-    type: 'doughnut',
-    data: {
-      labels: entries.map(e => e[0]),
-      datasets: [{ data: entries.map(e => +e[1].toFixed(2)), backgroundColor: palette, borderColor: '#151e33', borderWidth: 3 }],
-    },
-    options: baseOpts({
-      cutout: '62%',
-      plugins: {
-        legend: { position: 'bottom', labels: { color: '#8b9ac2', usePointStyle: true, boxWidth: 8, padding: 10, font: { size: 11 } } },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.label}：${fmtMoney(ctx.parsed)}` } },
-      },
-    }),
-  });
-}
-function baseOpts(extra) {
-  return Object.assign({
-    responsive: true, maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: { legend: { labels: { color: '#8b9ac2', usePointStyle: true, boxWidth: 8 } } },
-  }, extra);
-}
-
-/* ---------- 交易行 HTML ---------- */
-function txRowHTML(t) {
-  const c = catOf(t.category);
-  return `
-  <div class="tx-row">
-    <div class="tx-emoji">${c.emoji}</div>
-    <div class="tx-info">
-      <div class="tx-note">${esc(t.note || c.name)}</div>
-      <div class="tx-meta">${t.date} · ${t.category}</div>
-    </div>
-    <div class="tx-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${fmtMoney(t.amount)}</div>
-    <button class="tx-edit" data-edit="${t.id}" title="编辑">✎</button>
-    <button class="tx-del" data-del="${t.id}" title="删除">✕</button>
-  </div>`;
-}
-
-/* ================= 记账页 ================= */
-function renderTxTable() {
-  const type = $('filterType').value;
-  const cat = $('filterCategory').value;
-  let txs = [...state.transactions].sort((a, b) => b.date.localeCompare(a.date));
-  if (type !== 'all') txs = txs.filter(t => t.type === type);
-  if (cat !== 'all') txs = txs.filter(t => t.category === cat);
-  $('txCount').textContent = `(${txs.length} 笔)`;
-
-  const body = $('txTableBody');
-  if (!txs.length) {
-    body.innerHTML = `<tr><td colspan="6"><div class="empty"><span class="big">📭</span>没有符合条件的交易</div></td></tr>`;
-    return;
-  }
-  body.innerHTML = txs.map(t => `
-    <tr>
-      <td>${t.date}</td>
-      <td><span class="tag ${t.type}">${t.type === 'expense' ? '支出' : '收入'}</span></td>
-      <td>${catOf(t.category).emoji} ${esc(t.category)}</td>
-      <td class="muted">${esc(t.note || '—')}</td>
-      <td class="r tx-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${fmtMoney(t.amount)}</td>
-      <td class="r">
-        <button class="tx-edit" data-edit="${t.id}">✎</button>
-        <button class="tx-del" data-del="${t.id}">✕</button>
-      </td>
-    </tr>`).join('');
-  body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => delTx(b.dataset.del));
-  body.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openTxModal(b.dataset.edit));
-}
-function delTx(id) {
-  if (!confirm('确定删除这笔交易吗？')) return;
-  state.transactions = state.transactions.filter(t => t.id !== id);
-  save(); refresh();
-}
-
-/* ---------- 交易模态框 ---------- */
-function fillCatSelect(type) {
-  const sel = $('txCategory');
-  const cats = type === 'income' ? INCOME_CATS : EXPENSE_CATS;
-  sel.innerHTML = cats.map(c => `<option value="${c.name}">${c.emoji} ${c.name}</option>`).join('');
-}
-function openTxModal(id) {
-  editingTxId = id || null;
-  $('txModalTitle').textContent = id ? '编辑交易' : '记一笔';
-  document.querySelectorAll('.seg-btn').forEach(b => {
-    b.classList.remove('active');
-    if (b.dataset.txType === 'expense') b.classList.add('active');
-  });
-  const t = id ? state.transactions.find(x => x.id === id) : null;
-  if (t) {
-    document.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('active', b.dataset.txType === t.type));
-    fillCatSelect(t.type);
-    $('txAmount').value = t.amount;
-    $('txCategory').value = t.category;
-    $('txDate').value = t.date;
-    $('txNote').value = t.note || '';
-  } else {
-    fillCatSelect('expense');
-    $('txAmount').value = '';
-    $('txDate').value = todayStr();
-    $('txNote').value = '';
-  }
-  $('txModal').hidden = false;
-}
-function closeTxModal() { $('txModal').hidden = true; editingTxId = null; }
+/* ---------- 表单错误提示（内联） ---------- */
 function formError(inp, msg) {
   inp.classList.add('input-error');
   const field = inp.closest('.field');
   if (field) {
     let err = field.querySelector('.field-error');
-    if (!err) {
-      err = document.createElement('div');
-      err.className = 'field-error';
-      field.appendChild(err);
-    }
+    if (!err) { err = document.createElement('div'); err.className = 'field-error'; field.appendChild(err); }
     err.textContent = msg;
   }
+  inp.focus();
 }
 function formClearError(inp) {
   inp.classList.remove('input-error');
   const field = inp.closest('.field');
-  if (field) {
-    const err = field.querySelector('.field-error');
-    if (err) err.remove();
-  }
-}
-function showToast(msg) {
-  let t = $('toast');
-  if (!t) {
-    t = document.createElement('div');
-    t.id = 'toast';
-    t.className = 'toast';
-    document.body.appendChild(t);
-  }
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(t._timer);
-  t._timer = setTimeout(() => t.classList.remove('show'), 2000);
-}
-function saveTx() {
-  const type = document.querySelector('.seg-btn.active').dataset.txType;
-  const amount = parseFloat($('txAmount').value);
-  const category = $('txCategory').value;
-  const date = $('txDate').value;
-  const note = $('txNote').value.trim();
-  if (!(amount > 0)) { formError($('txAmount'), '请输入有效的金额'); return; }
-  if (!date) { formError($('txDate'), '请选择日期'); return; }
-  const rec = { type, category, amount, date, note };
-  if (editingTxId) {
-    const i = state.transactions.findIndex(x => x.id === editingTxId);
-    if (i >= 0) state.transactions[i] = { id: editingTxId, ...rec };
-  } else {
-    state.transactions.push({ id: uid(), ...rec });
-  }
-  const wasEdit = !!editingTxId;
-  save(); closeTxModal(); showToast(wasEdit ? '已更新 ✓' : '已保存 ✓'); refresh();
+  const err = field ? field.querySelector('.field-error') : null;
+  if (err) err.remove();
 }
 
-/* ================= 预算页 ================= */
-function renderBudget() {
-  $('budgetMonthLabel').textContent = `· ${monthLabel(currentMonth)}`;
+/* ---------- 统计 ---------- */
+function monthStats(ym) {
+  const txs = state.transactions.filter(t => t.date && t.date.startsWith(ym));
+  let income = 0, expense = 0;
+  for (const t of txs) { if (t.type === 'income') income += Number(t.amount) || 0; else expense += Number(t.amount) || 0; }
+  return { income, expense, net: income - expense, count: txs.length };
+}
+
+/* ---------- 视图切换 ---------- */
+function switchView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  const v = document.getElementById('view-' + name);
+  if (v) v.classList.add('active');
+  if (name === 'dashboard') renderDashboard();
+  if (name === 'transactions') { fillCategorySelect(); renderTxTable(); }
+  if (name === 'budget') renderBudget();
+}
+
+/* ================= 总览 ================= */
+function renderDashboard() {
   const s = monthStats(currentMonth);
-  const totalBudget = Object.values(state.budgets).reduce((a, b) => a + Number(b), 0);
-  const used = Object.entries(state.budgets).reduce((a, [cat, amt]) => {
-    const spent = expenseByCat(currentMonth)[cat] || 0;
-    return a + Math.min(spent, Number(amt));
-  }, 0);
-  $('budgetSummary').innerHTML = `
-    <div class="budget-stat"><div class="lbl">月度总预算</div><div class="val">${fmtMoney0(totalBudget)}</div></div>
-    <div class="budget-stat"><div class="lbl">已使用</div><div class="val" style="color:${used > totalBudget ? 'var(--expense)' : 'var(--income)'}">${fmtMoney0(used)}</div></div>
-    <div class="budget-stat"><div class="lbl">预算剩余</div><div class="val" style="color:${totalBudget - used >= 0 ? 'var(--text)' : 'var(--expense)'}">${fmtMoney0(totalBudget - used)}</div></div>`;
+  $('kpiIncome').textContent = fmtMoney(s.income);
+  $('kpiExpense').textContent = fmtMoney(s.expense);
+  $('kpiNet').textContent = fmtMoney(s.net);
 
-  const spentMap = expenseByCat(currentMonth);
-  const cats = Object.keys(state.budgets).length
-    ? Object.keys(state.budgets)
-    : EXPENSE_CATS.map(c => c.name);
-  const list = $('budgetList');
-  if (!cats.length) { list.innerHTML = `<div class="empty">点击「编辑预算」设置分类预算</div>`; return; }
-  list.innerHTML = cats.map(cat => {
-    const budget = Number(state.budgets[cat] || 0);
-    const spent = spentMap[cat] || 0;
-    const pct = budget > 0 ? spent / budget * 100 : (spent > 0 ? 100 : 0);
-    let cls = 'zero', barW = 0;
-    if (budget > 0) {
-      barW = Math.min(100, pct);
-      cls = pct > 100 ? 'over' : pct > 80 ? 'warn' : 'ok';
-    } else if (spent > 0) { barW = 100; cls = 'over'; }
-    return `
-    <div class="budget-row">
-      <div class="budget-top">
-        <span class="budget-name">${CAT_EMOJI[cat] || '📌'} ${esc(cat)}</span>
-        <span class="budget-nums">
-          ${budget > 0 ? `${fmtMoney0(spent)} / ${fmtMoney0(budget)} · ${pct.toFixed(0)}%` : (spent > 0 ? `${fmtMoney0(spent)}（未设预算）` : '未设预算')}
-        </span>
-      </div>
-      <div class="budget-bar"><div class="budget-fill ${cls}" style="width:${barW}%"></div></div>
+  const bKeys = Object.keys(state.budgets);
+  const bTotal = bKeys.reduce((a, k) => a + (Number(state.budgets[k]) || 0), 0);
+  if (bTotal > 0) {
+    const spent = Object.keys(state.budgets).reduce((a, k) => {
+      const cat = state.budgets[k];
+      const spentCat = state.transactions.filter(t => t.type === 'expense' && t.date && t.date.startsWith(currentMonth) && t.category === k)
+        .reduce((x, t) => x + (Number(t.amount) || 0), 0);
+      return a + Math.min(spentCat, cat);
+    }, 0);
+    $('kpiBudget').textContent = Math.round(spent / bTotal * 100) + '%';
+  } else {
+    $('kpiBudget').textContent = '未设置';
+  }
+
+  renderTrendChart();
+  renderPieChart();
+  renderRecentTx();
+}
+function renderTrendChart() {
+  const labels = [], income = [], expense = [];
+  for (let i = 5; i >= 0; i--) {
+    const ym = shiftMonth(currentMonth, -i);
+    labels.push(Number(ym.slice(5, 7)) + '月');
+    const s = monthStats(ym);
+    income.push(Math.round(s.income));
+    expense.push(Math.round(s.expense));
+  }
+  const cfg = {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: '收入', data: income, borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.12)', tension: .35, fill: true, pointRadius: 3 },
+      { label: '支出', data: expense, borderColor: '#fb7185', backgroundColor: 'rgba(251,113,133,.1)', tension: .35, fill: true, pointRadius: 3 },
+    ] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#8b9ac2' } } },
+      scales: {
+        x: { ticks: { color: '#8b9ac2' }, grid: { color: 'rgba(36,50,82,.4)' } },
+        y: { ticks: { color: '#8b9ac2' }, grid: { color: 'rgba(36,50,82,.4)' } },
+      },
+    },
+  };
+  if (charts.chartTrend) { charts.chartTrend.data = cfg.data; charts.chartTrend.update(); }
+  else charts.chartTrend = new Chart($('trendChart'), cfg);
+}
+function renderPieChart() {
+  const spent = {};
+  for (const t of state.transactions) {
+    if (t.type === 'expense' && t.date && t.date.startsWith(currentMonth)) spent[t.category] = (spent[t.category] || 0) + (Number(t.amount) || 0);
+  }
+  const entries = Object.entries(spent).sort((a, b) => b[1] - a[1]).slice(0, 7);
+  const labels = entries.map(e => e[0]);
+  const data = entries.map(e => Math.round(e[1]));
+  const palette = ['#34d399', '#2dd4bf', '#fb7185', '#fbbf24', '#818cf8', '#f472b6', '#22d3ee'];
+  const cfg = {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: palette.slice(0, data.length), borderWidth: 0 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { color: '#8b9ac2', boxWidth: 10 } },
+      },
+    },
+  };
+  if (charts.chartPie) { charts.chartPie.data = cfg.data; charts.chartPie.update(); }
+  else charts.chartPie = new Chart($('pieChart'), cfg);
+}
+function renderRecentTx() {
+  const recent = [...state.transactions].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt).slice(0, 6);
+  const box = $('recentTx');
+  if (!recent.length) { box.innerHTML = '<div class="empty">还没有记录，去「记账」页记第一笔吧</div>'; return; }
+  box.innerHTML = recent.map(t => {
+    const cat = [...EXPENSE_CATS, ...INCOME_CATS].find(c => c.name === t.category);
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px solid rgba(36,50,82,.5);font-size:13.5px;">
+      <span>${cat ? cat.emoji : '📌'} ${esc(t.category)} <span class="muted">${esc(t.note || '')} · ${t.date}</span></span>
+      <span class="${t.type === 'income' ? 'income' : 'expense'}" style="font-weight:700;">${t.type === 'income' ? '+' : '-'}${fmtMoney0(t.amount)}</span>
     </div>`;
   }).join('');
 }
-function openBudgetModal() {
-  $('budgetForm').innerHTML = EXPENSE_CATS.map(c => `
-    <label class="field"><span>${c.emoji} ${c.name}</span>
+
+/* ================= 记账 ================= */
+function fillCategorySelect() {
+  const sel = $('txCategory');
+  const type = document.querySelector('.seg-btn.active').dataset.txType;
+  const cats = type === 'income' ? INCOME_CATS : EXPENSE_CATS;
+  sel.innerHTML = cats.map(c => `<option value="${c.name}">${c.emoji} ${c.name}</option>`).join('');
+}
+function resetTxForm() {
+  $('txAmount').value = '';
+  $('txNote').value = '';
+  $('txDate').value = todayStr();
+  formClearError($('txAmount'));
+  fillCategorySelect();
+}
+function saveTx() {
+  const amount = parseFloat($('txAmount').value);
+  const date = $('txDate').value;
+  if (!(amount > 0)) { formError($('txAmount'), '请输入有效的金额（大于 0）'); return; }
+  if (!date) { formError($('txDate'), '请选择日期'); return; }
+  const type = document.querySelector('.seg-btn.active').dataset.txType;
+  const category = $('txCategory').value;
+  const note = $('txNote').value.trim();
+  state.transactions.push({ id: uid(), type, amount, category, date, note, createdAt: Date.now() });
+  save();
+  showToast('已保存 ✓ 这笔已记入' + (type === 'income' ? '收入' : '支出'));
+  resetTxForm();
+  renderTxTable();
+  renderBudget();
+}
+function renderTxTable() {
+  const ft = $('filterType').value;
+  const fc = $('filterCategory').value;
+  let list = [...state.transactions].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+  if (ft !== 'all') list = list.filter(t => t.type === ft);
+  if (fc !== 'all') list = list.filter(t => t.category === fc);
+  $('txCount').textContent = list.length ? `（${list.length} 笔）` : '';
+  const body = $('txTableBody');
+  if (!list.length) {
+    body.innerHTML = `<tr><td colspan="6" class="empty">暂无记录，在上方「记一笔」填写并保存</td></tr>`;
+    return;
+  }
+  body.innerHTML = list.map(t => {
+    const cat = [...EXPENSE_CATS, ...INCOME_CATS].find(c => c.name === t.category);
+    return `<tr>
+      <td>${esc(t.date)}</td>
+      <td><span class="tag ${t.type}">${t.type === 'income' ? '收入' : '支出'}</span></td>
+      <td>${cat ? cat.emoji : ''} ${esc(t.category)}</td>
+      <td class="muted">${esc(t.note || '')}</td>
+      <td class="r" style="font-weight:700;color:${t.type === 'income' ? 'var(--income)' : 'var(--expense)'};">${t.type === 'income' ? '+' : '-'}${fmtMoney(t.amount)}</td>
+      <td class="r"><button class="mini-btn" data-del="${t.id}" title="删除">✕</button></td>
+    </tr>`;
+  }).join('');
+  body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    state.transactions = state.transactions.filter(x => x.id !== b.dataset.del);
+    save(); renderTxTable(); renderBudget(); showToast('已删除');
+  });
+}
+
+/* ================= 预算 ================= */
+function renderBudget() {
+  $('budgetMonthLabel').textContent = '（' + monthLabel(currentMonth) + '）';
+  const form = $('budgetForm');
+  form.innerHTML = [...EXPENSE_CATS, ...INCOME_CATS].map(c => {
+    const val = state.budgets[c.name] ?? '';
+    return `<label class="field"><span>${c.emoji} ${c.name}</span>
       <input type="number" class="input budget-input" data-cat="${c.name}" min="0" step="1"
-             placeholder="不设预算" value="${state.budgets[c.name] ?? ''}">
-    </label>`).join('');
-  $('budgetModal').hidden = false;
+             placeholder="不设预算" value="${val}"></label>`;
+  }).join('');
+
+  const summary = $('budgetSummary');
+  let html = '';
+  let hasBudget = false;
+  for (const c of EXPENSE_CATS) {
+    const budget = Number(state.budgets[c.name]);
+    if (!(budget > 0)) continue;
+    hasBudget = true;
+    const spent = state.transactions.filter(t => t.type === 'expense' && t.date && t.date.startsWith(currentMonth) && t.category === c.name)
+      .reduce((a, t) => a + (Number(t.amount) || 0), 0);
+    const pct = Math.min(100, spent / budget * 100);
+    const over = spent > budget;
+    html += `<div class="card">
+      <div style="display:flex;justify-content:space-between;font-size:13px;">
+        <span>${c.emoji} ${c.name}</span>
+        <span style="color:${over ? 'var(--expense)' : 'var(--text)'};font-weight:700;">${fmtMoney0(spent)} / ${fmtMoney0(budget)}</span>
+      </div>
+      <div class="budget-bar"><div class="budget-fill ${over ? 'over' : ''}" style="width:${pct}%"></div></div>
+    </div>`;
+  }
+  summary.innerHTML = hasBudget ? html : '<p class="muted">上方填写分类预算后点「保存预算」，这里会显示使用进度。</p>';
 }
 function saveBudget() {
   const next = {};
@@ -424,48 +279,10 @@ function saveBudget() {
     if (v > 0) next[inp.dataset.cat] = v;
   });
   state.budgets = next;
-  save(); $('budgetModal').hidden = true; showToast('预算已保存 ✓'); renderBudget();
-}
-
-/* ================= 储蓄目标 ================= */
-function renderGoals() {
-  const grid = $('goalGrid');
-  if (!state.goals.length) {
-    grid.innerHTML = `<div class="card empty" style="grid-column:1/-1"><span class="big">🎯</span>还没有储蓄目标<br>可通过「数据管理 → 导入数据」添加</div>`;
-    return;
-  }
-  grid.innerHTML = state.goals.map(g => {
-    const pct = Number(g.target) > 0 ? Math.min(100, Number(g.current) / Number(g.target) * 100) : 0;
-    const remaining = Math.max(0, Number(g.target) - Number(g.current));
-    let eta = '—';
-    const avg = avgMonthlyNet(6);
-    if (avg > 0) {
-      const months = Math.ceil(remaining / avg);
-      const d = new Date();
-      d.setMonth(d.getMonth() + months);
-      eta = `${months} 个月（约 ${d.getFullYear()}.${d.getMonth()+1}）`;
-    }
-    const deadline = g.deadline ? ` · 目标日 ${g.deadline}` : '';
-    return `
-    <div class="card goal-card">
-      <div class="goal-name">${g.emoji || '🎯'} ${esc(g.name)}</div>
-      <div class="goal-nums">
-        <span>已存 <b>${fmtMoney0(g.current)}</b></span>
-        <span class="goal-pct" style="color:${pct >= 100 ? 'var(--income)' : 'var(--accent)'}">${pct.toFixed(0)}%</span>
-      </div>
-      <div class="budget-bar"><div class="budget-fill ok" style="width:${pct}%"></div></div>
-      <div class="muted" style="font-size:12px; margin-top:9px;">目标 ${fmtMoney0(g.target)}${deadline}</div>
-      <div class="muted" style="font-size:12px; margin-top:3px;">按近6月平均月结余估算：还需约 ${eta}</div>
-      ${pct >= 100 ? '<div style="color:var(--income);font-size:12px;margin-top:6px;font-weight:600;">🎉 目标已达成！</div>' : ''}
-    </div>`;
-  }).join('');
-}
-function avgMonthlyNet(n) {
-  const months = [];
-  for (let i = n - 1; i >= 0; i--) months.push(shiftMonth(currentMonth, -i));
-  const nets = months.map(m => monthStats(m).net);
-  const avg = nets.reduce((a, b) => a + b, 0) / n;
-  return avg > 0 ? avg : 0;
+  save();
+  showToast('预算已保存 ✓');
+  renderBudget();
+  renderDashboard();
 }
 
 /* ================= 数据管理 ================= */
@@ -473,144 +290,109 @@ function exportData() {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `finsight-backup-${todayStr()}.json`;
+  a.download = 'finsight-backup-' + todayStr() + '.json';
   a.click();
-  URL.revokeObjectURL(a.href);
+  showToast('已导出备份文件');
 }
 function importData(file) {
   const reader = new FileReader();
   reader.onload = e => {
     try {
       const parsed = JSON.parse(e.target.result);
-      if (!Array.isArray(parsed.transactions)) throw new Error('格式错误');
-      state = { transactions: [], budgets: {}, goals: [], ...parsed };
-      save(); refresh();
-      alert('导入成功！');
-    } catch (err) {
-      alert('导入失败：文件格式不正确');
-    }
+      if (!parsed || !Array.isArray(parsed.transactions)) { showToast('导入失败：文件格式不正确'); return; }
+      state = { transactions: parsed.transactions, budgets: parsed.budgets || {} };
+      save(); renderDashboard(); renderTxTable(); renderBudget();
+      showToast('导入成功 ✓ 数据已更新');
+    } catch (err) { showToast('导入失败：文件无法解析'); }
   };
   reader.readAsText(file);
 }
 function loadSample() {
-  if (state.transactions.length && !confirm('已有数据，载入示例数据会覆盖当前内容。继续？')) return;
-  state = { transactions: sampleTx(), budgets: { 餐饮: 1800, 交通: 400, 购物: 1200, 娱乐: 500, 住房: 3000, 水电: 250, 教育: 800 }, goals: sampleGoals() };
-  save(); showToast('示例数据已载入 ✦'); refresh();
-}
-function sampleTx() {
-  const txs = [];
-  const now = new Date();
-  const rnd = (a, b) => a + Math.random() * (b - a);
-  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    // 工资
-    txs.push({ id: uid(), type: 'income', category: '工资', amount: 8000, date: `${ym}-05`, note: '月度工资' });
-    txs.push({ id: uid(), type: 'income', category: '理财收益', amount: Math.round(rnd(80, 320)), date: `${ym}-15`, note: '基金收益' });
-    // 支出（每天几笔）
-    for (let day = 1; day <= 28; day += pick([1, 2, 3])) {
-      const cats = pick([
-        { c: '餐饮', a: [18, 80] }, { c: '交通', a: [4, 25] }, { c: '购物', a: [30, 400] },
-        { c: '娱乐', a: [20, 150] }, { c: '水电', a: [60, 180] }, { c: '教育', a: [40, 120] },
-        { c: '人情', a: [50, 300] }, { c: '医疗', a: [20, 90] }, { c: '其他', a: [10, 100] },
-      ]);
-      const dd = new Date(d.getFullYear(), d.getMonth(), day);
-      const date = `${dd.getFullYear()}-${String(dd.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-      txs.push({ id: uid(), type: 'expense', category: cats.c, amount: Math.round(rnd(cats.a[0], cats.a[1]) * 10) / 10, date, note: pick(['日常开销', '', '超市采购', '外卖', '周末消费', '通勤']) });
-    }
-    // 房租
-    txs.push({ id: uid(), type: 'expense', category: '住房', amount: 2800, date: `${ym}-01`, note: '房租' });
+  const today = todayStr();
+  const sample = [];
+  for (let i = 0; i < 60; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - Math.floor(Math.random() * 90));
+    const cat = EXPENSE_CATS[Math.floor(Math.random() * EXPENSE_CATS.length)];
+    sample.push({
+      id: uid(), type: 'expense', category: cat.name,
+      amount: Math.round((20 + Math.random() * 180) * 100) / 100,
+      date: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'),
+      note: '', createdAt: Date.now() - i * 3600000,
+    });
   }
-  return txs;
-}
-function sampleGoals() {
-  return [
-    { id: uid(), name: '应急基金', target: 30000, current: 15600, deadline: '', emoji: '🛡️' },
-    { id: uid(), name: '旅行基金', target: 12000, current: 3800, deadline: '2027-03-01', emoji: '🏝️' },
-  ];
-}
-function clearAll() {
-  if (!confirm('确定清空全部数据吗？此操作不可撤销，建议先导出备份。')) return;
-  state = { transactions: [], budgets: {}, goals: [] };
-  save(); refresh();
-}
-
-/* ================= 刷新 ================= */
-function refresh() {
-  $('monthLabel').textContent = monthLabel(currentMonth);
-  const s = monthStats(currentMonth);
-  $('netChip').textContent = `本月结余 ${fmtMoney0(s.net)}`;
-  $('netChip').style.color = s.net >= 0 ? 'var(--text)' : 'var(--expense)';
-  const active = document.querySelector('.nav-item.active');
-  if (active) switchView(active.dataset.view);
+  for (let i = 0; i < 8; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - Math.floor(Math.random() * 60));
+    sample.push({
+      id: uid(), type: 'income', category: '工资',
+      amount: 8000 + Math.floor(Math.random() * 2000),
+      date: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'),
+      note: '工资', createdAt: Date.now() - i * 3600000,
+    });
+  }
+  state.transactions = sample;
+  state.budgets = { 餐饮: 1800, 交通: 400, 购物: 1200, 娱乐: 500, 住房: 3000, 水电: 250, 教育: 800 };
+  save(); renderDashboard(); renderTxTable(); renderBudget();
+  showToast('示例数据已载入 ✦');
 }
 
 /* ================= 初始化 ================= */
 function init() {
-  load();
-  // 筛选分类下拉
-  const fcat = $('filterCategory');
-  fcat.innerHTML = `<option value="all">全部分类</option>` + [...EXPENSE_CATS, ...INCOME_CATS]
-    .map(c => `<option value="${c.name}">${c.emoji} ${c.name}</option>`).join('');
-
   // 导航
   document.querySelectorAll('.nav-item').forEach(b => b.onclick = () => switchView(b.dataset.view));
-  $('goTransactions').onclick = () => switchView('transactions');
+  $('btnGoTx').onclick = () => switchView('transactions');
 
-  // 月份
-  $('prevMonth').onclick = () => { currentMonth = shiftMonth(currentMonth, -1); refresh(); };
-  $('nextMonth').onclick = () => { currentMonth = shiftMonth(currentMonth, 1); refresh(); };
-  $('btnToday').onclick = () => { currentMonth = todayStr().slice(0, 7); refresh(); };
+  // 月份切换
+  $('prevMonth').onclick = () => { currentMonth = shiftMonth(currentMonth, -1); renderDashboard(); renderBudget(); };
+  $('nextMonth').onclick = () => { currentMonth = shiftMonth(currentMonth, 1); renderDashboard(); renderBudget(); };
+  $('btnToday').onclick = () => { currentMonth = todayStr().slice(0, 7); renderDashboard(); renderBudget(); };
+  $('monthLabel').textContent = currentMonth;
 
-  // 记账
-  $('btnAdd').onclick = () => openTxModal(null);
-  $('txSave').onclick = saveTx;
+  // 记账表单
   $('txTypeSeg').addEventListener('click', e => {
     const b = e.target.closest('.seg-btn');
     if (!b) return;
-    document.querySelectorAll('.seg-btn').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('#txTypeSeg .seg-btn').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
-    fillCatSelect(b.dataset.txType);
+    fillCategorySelect();
   });
-  $('filterType').onchange = renderTxTable;
+  $('txSave').onclick = saveTx;
+  $('txReset').onclick = () => { resetTxForm(); };
+  $('filterType').onchange = () => { fillFilterCategory(); renderTxTable(); };
   $('filterCategory').onchange = renderTxTable;
+  ['txAmount', 'txDate'].forEach(id => $(id).addEventListener('input', () => formClearError($(id))));
 
   // 预算
-  $('btnEditBudget').onclick = openBudgetModal;
   $('budgetSave').onclick = saveBudget;
 
-  // 目标（新建/编辑/存一笔入口已全部移除，仅展示已有目标）
-
-  // 数据
+  // 数据管理
   $('btnExport').onclick = exportData;
   $('btnImport').onclick = () => $('importFile').click();
   $('importFile').onchange = e => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; };
   $('btnSample').onclick = loadSample;
-  $('btnClear').onclick = clearAll;
+  $('btnClear').onclick = () => {
+    if (state.transactions.length === 0) { showToast('数据本来就是空的'); return; }
+    state = { transactions: [], budgets: {} };
+    save(); renderDashboard(); renderTxTable(); renderBudget();
+    showToast('已清空全部数据');
+  };
 
-  // 模态框关闭
-  document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('.modal-mask').hidden = true);
-  document.querySelectorAll('.modal-mask').forEach(mask => {
-    mask.addEventListener('click', e => { if (e.target === mask) mask.hidden = true; });
-  });
-
-  // 按 Esc 键关闭所有弹窗
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
-      document.querySelectorAll('.modal-mask').forEach(m => { if (!m.hidden) m.hidden = true; });
-    }
-  });
-
-  // 输入时自动清除错误提示
-  ['txAmount', 'txDate', 'goalName', 'goalTarget', 'goalCurrent'].forEach(id => {
-    const el = $(id);
-    el.addEventListener('input', () => formClearError(el));
-  });
-
-  // 保险：无论页面以什么状态加载（浏览器可能恢复上次会话、弹窗残留），强制全部关闭
-  document.querySelectorAll('.modal-mask').forEach(m => { m.hidden = true; });
-
-  refresh();
+  // 初始渲染
+  fillFilterCategory();
+  fillCategorySelect();
+  $('txDate').value = todayStr();
+  renderDashboard();
+  renderTxTable();
+  renderBudget();
 }
+function fillFilterCategory() {
+  const sel = $('filterCategory');
+  const ft = $('filterType').value;
+  const cats = ft === 'income' ? INCOME_CATS : EXPENSE_CATS;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="all">全部分类</option>' + cats.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+  sel.value = cur;
+}
+
 document.addEventListener('DOMContentLoaded', init);
