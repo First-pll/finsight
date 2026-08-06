@@ -516,6 +516,11 @@ function saveGoal() {
     state.goals.push({ id: uid(), ...rec });
   }
   save(); $('goalModal').hidden = true; showToast('目标已保存 ✓'); renderGoals();
+  // 保存后自动滚动到目标卡片区，让用户立刻看到新目标
+  setTimeout(() => {
+    const grid = $('goalGrid');
+    if (grid && grid.scrollIntoView) grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 120);
 }
 
 /* ================= 数据管理 ================= */
