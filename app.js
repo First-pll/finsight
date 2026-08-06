@@ -316,6 +316,27 @@ function openTxModal(id) {
   $('txModal').hidden = false;
 }
 function closeTxModal() { $('txModal').hidden = true; editingTxId = null; }
+function formError(inp, msg) {
+  inp.classList.add('input-error');
+  const field = inp.closest('.field');
+  if (field) {
+    let err = field.querySelector('.field-error');
+    if (!err) {
+      err = document.createElement('div');
+      err.className = 'field-error';
+      field.appendChild(err);
+    }
+    err.textContent = msg;
+  }
+}
+function formClearError(inp) {
+  inp.classList.remove('input-error');
+  const field = inp.closest('.field');
+  if (field) {
+    const err = field.querySelector('.field-error');
+    if (err) err.remove();
+  }
+}
 function showToast(msg) {
   let t = $('toast');
   if (!t) {
@@ -335,8 +356,8 @@ function saveTx() {
   const category = $('txCategory').value;
   const date = $('txDate').value;
   const note = $('txNote').value.trim();
-  if (!(amount > 0)) { alert('请输入有效的金额'); return; }
-  if (!date) { alert('请选择日期'); return; }
+  if (!(amount > 0)) { formError($('txAmount'), '请输入有效的金额'); return; }
+  if (!date) { formError($('txDate'), '请选择日期'); return; }
   const rec = { type, category, amount, date, note };
   if (editingTxId) {
     const i = state.transactions.findIndex(x => x.id === editingTxId);
@@ -484,8 +505,8 @@ function saveGoal() {
   const target = parseFloat($('goalTarget').value);
   const current = parseFloat($('goalCurrent').value) || 0;
   const deadline = $('goalDeadline').value || '';
-  if (!name) { alert('请输入目标名称'); return; }
-  if (!(target > 0)) { alert('请输入有效的目标金额'); return; }
+  if (!name) { formError($('goalName'), '请输入目标名称'); return; }
+  if (!(target > 0)) { formError($('goalTarget'), '请输入有效的目标金额'); return; }
   const emojis = ['🎯', '🚀', '🏝️', '💎', '🏠', '🎓', '💻', '🚗'];
   const rec = { name, target, current, deadline, emoji: emojis[state.goals.length % emojis.length] };
   if (editingGoalId) {
@@ -624,6 +645,12 @@ function init() {
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('.modal-mask').hidden = true);
   document.querySelectorAll('.modal-mask').forEach(mask => {
     mask.addEventListener('click', e => { if (e.target === mask) mask.hidden = true; });
+  });
+
+  // 输入时自动清除错误提示
+  ['txAmount', 'txDate', 'goalName', 'goalTarget', 'goalCurrent'].forEach(id => {
+    const el = $(id);
+    el.addEventListener('input', () => formClearError(el));
   });
 
   refresh();
