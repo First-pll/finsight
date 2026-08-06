@@ -239,6 +239,18 @@ body {
 .empty { text-align:center; color: var(--muted); padding: 34px 10px; font-size:13.5px; }
 .empty .big { font-size:30px; display:block; margin-bottom:10px; }
 
+/* ============ Toast 提示 ============ */
+.toast {
+  position: fixed; bottom: 30px; left: 50%;
+  transform: translateX(-50%) translateY(16px);
+  background: var(--card2); border: 1px solid rgba(52,211,153,.45); color: var(--text);
+  padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 600;
+  box-shadow: 0 12px 32px rgba(0,0,0,.45);
+  opacity: 0; pointer-events: none; z-index: 300;
+  transition: all .28s ease;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
 /* ============ 响应式 ============ */
 @media (max-width: 1080px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }

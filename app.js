@@ -310,12 +310,25 @@ function openTxModal(id) {
   } else {
     fillCatSelect('expense');
     $('txAmount').value = '';
-    $('txDate').value = currentMonth + '-01';
+    $('txDate').value = todayStr();
     $('txNote').value = '';
   }
   $('txModal').hidden = false;
 }
 function closeTxModal() { $('txModal').hidden = true; editingTxId = null; }
+function showToast(msg) {
+  let t = $('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.className = 'toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 2000);
+}
 function saveTx() {
   const type = document.querySelector('.seg-btn.active').dataset.txType;
   const amount = parseFloat($('txAmount').value);
@@ -331,7 +344,8 @@ function saveTx() {
   } else {
     state.transactions.push({ id: uid(), ...rec });
   }
-  save(); closeTxModal(); refresh();
+  const wasEdit = !!editingTxId;
+  save(); closeTxModal(); showToast(wasEdit ? '已更新 ✓' : '已保存 ✓'); refresh();
 }
 
 /* ================= 预算页 ================= */
@@ -390,7 +404,7 @@ function saveBudget() {
     if (v > 0) next[inp.dataset.cat] = v;
   });
   state.budgets = next;
-  save(); $('budgetModal').hidden = true; renderBudget();
+  save(); $('budgetModal').hidden = true; showToast('预算已保存 ✓'); renderBudget();
 }
 
 /* ================= 储蓄目标 ================= */
@@ -480,7 +494,7 @@ function saveGoal() {
   } else {
     state.goals.push({ id: uid(), ...rec });
   }
-  save(); $('goalModal').hidden = true; renderGoals();
+  save(); $('goalModal').hidden = true; showToast('目标已保存 ✓'); renderGoals();
 }
 
 /* ================= 数据管理 ================= */
@@ -510,7 +524,7 @@ function importData(file) {
 function loadSample() {
   if (state.transactions.length && !confirm('已有数据，载入示例数据会覆盖当前内容。继续？')) return;
   state = { transactions: sampleTx(), budgets: { 餐饮: 1800, 交通: 400, 购物: 1200, 娱乐: 500, 住房: 3000, 水电: 250, 教育: 800 }, goals: sampleGoals() };
-  save(); refresh();
+  save(); showToast('示例数据已载入 ✦'); refresh();
 }
 function sampleTx() {
   const txs = [];
