@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>FinSight · 个人理财仪表盘</title>
 <meta name="description" content="FinSight — 个人理财仪表盘：记账、预算与储蓄目标可视化">
 <link rel="stylesheet" href="style.css?v=20260806">
@@ -161,7 +164,7 @@
   <div class="modal">
     <div class="modal-head">
       <span id="txModalTitle">记一笔</span>
-      <button class="icon-btn" data-close>✕</button>
+      <button class="icon-btn" data-close onclick="this.closest('.modal-mask').hidden=true">✕</button>
     </div>
     <div class="seg" id="txTypeSeg">
       <button class="seg-btn active" data-tx-type="expense">支出</button>
@@ -172,8 +175,8 @@
     <label class="field"><span>日期</span><input type="date" id="txDate" class="input"></label>
     <label class="field"><span>备注</span><input type="text" id="txNote" class="input" placeholder="可选"></label>
     <div class="modal-foot">
-      <button class="btn btn-ghost" data-close>取消</button>
-      <button class="btn btn-primary" id="txSave">保存</button>
+      <button class="btn btn-ghost" data-close onclick="this.closest('.modal-mask').hidden=true">取消</button>
+      <button class="btn btn-primary" id="txSave" onclick="saveTx()">保存</button>
     </div>
   </div>
 </div>
@@ -183,13 +186,13 @@
   <div class="modal">
     <div class="modal-head">
       <span>编辑每月分类预算</span>
-      <button class="icon-btn" data-close>✕</button>
+      <button class="icon-btn" data-close onclick="this.closest('.modal-mask').hidden=true">✕</button>
     </div>
     <p class="muted">预算为每月的固定额度，设置后按月生效。留空表示该分类不设预算。</p>
     <div id="budgetForm" class="budget-form"></div>
     <div class="modal-foot">
-      <button class="btn btn-ghost" data-close>取消</button>
-      <button class="btn btn-primary" id="budgetSave">保存预算</button>
+      <button class="btn btn-ghost" data-close onclick="this.closest('.modal-mask').hidden=true">取消</button>
+      <button class="btn btn-primary" id="budgetSave" onclick="saveBudget()">保存预算</button>
     </div>
   </div>
 </div>
@@ -199,15 +202,15 @@
   <div class="modal">
     <div class="modal-head">
       <span id="goalModalTitle">新建储蓄目标</span>
-      <button class="icon-btn" data-close>✕</button>
+      <button class="icon-btn" data-close onclick="this.closest('.modal-mask').hidden=true">✕</button>
     </div>
     <label class="field"><span>目标名称</span><input type="text" id="goalName" class="input" placeholder="如：应急基金 / 旅行基金"></label>
     <label class="field"><span>目标金额 (¥)</span><input type="number" id="goalTarget" class="input" min="0" step="0.01"></label>
     <label class="field"><span>已存金额 (¥)</span><input type="number" id="goalCurrent" class="input" min="0" step="0.01"></label>
     <label class="field"><span>目标日期（可选）</span><input type="date" id="goalDeadline" class="input"></label>
     <div class="modal-foot">
-      <button class="btn btn-ghost" data-close>取消</button>
-      <button class="btn btn-primary" id="goalSave">保存</button>
+      <button class="btn btn-ghost" data-close onclick="this.closest('.modal-mask').hidden=true">取消</button>
+      <button class="btn btn-primary" id="goalSave" onclick="saveGoal()">保存</button>
     </div>
   </div>
 </div>
