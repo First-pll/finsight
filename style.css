@@ -265,11 +265,17 @@ body {
     width:100%; height:auto; position:static; flex-direction:row; align-items:center;
     padding:12px 14px; border-right:none; border-bottom:1px solid var(--border);
     gap:10px; overflow-x:auto;
+    background: linear-gradient(180deg, #16234a, #0e1834);
   }
   .brand { padding:0 6px 0 0; }
   .brand-sub { display:none; }
-  .nav { flex-direction:row; margin:0; }
-  .nav-item { padding:8px 10px; white-space:nowrap; }
+  .nav { flex-direction:row; margin:0; gap:6px; }
+  .nav-item {
+    padding:8px 12px; white-space:nowrap;
+    background: rgba(255,255,255,.05); border:1px solid rgba(139,154,194,.25);
+    border-radius:8px; color: #b8c4e4;
+  }
+  .nav-item:hover { background: var(--card2); color: var(--text); }
   .sidebar-foot { display:none; }
   .main { padding: 0 14px 30px; }
   .topbar { flex-wrap:wrap; gap:8px; }
