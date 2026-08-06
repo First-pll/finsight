@@ -1,4 +1,4 @@
-# FinSight local server - no-cache headers so browsers always get the latest files
+# 财政大臣 local server - no-cache headers so browsers always get the latest files
 import http.server
 import socketserver
 import os
@@ -20,5 +20,5 @@ class Server(socketserver.ThreadingTCPServer):
 
 if __name__ == '__main__':
     with Server(('127.0.0.1', 8080), Handler) as httpd:
-        print('FinSight server: http://127.0.0.1:8080 (no-cache)', flush=True)
+        print('财政大臣 server: http://127.0.0.1:8080 (no-cache)', flush=True)
         httpd.serve_forever()

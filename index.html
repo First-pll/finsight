@@ -6,43 +6,84 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>FinSight · 个人理财仪表盘</title>
-<link rel="stylesheet" href="style.css?v=20260806f">
+<title>财政大臣 · 个人理财仪表盘</title>
+<link rel="stylesheet" href="style.css?v=20260806h">
 <script src="vendor/chart.umd.min.js"></script>
 </head>
 <body>
 <aside class="sidebar">
-  <div class="brand">◈ FinSight<span>财务洞察仪表盘</span></div>
+  <div class="brand">
+    <div class="logo">财</div>
+    <div class="name">财政<span>大臣</span></div>
+  </div>
   <nav class="nav">
-    <button class="nav-item active" data-view="dashboard">◉ 总览</button>
-    <button class="nav-item" data-view="transactions">⇅ 记账</button>
-    <button class="nav-item" data-view="budget">▤ 预算</button>
-    <button class="nav-item" data-view="settings">⚙ 数据管理</button>
+    <button class="nav-item active" data-view="dashboard">📊 总览</button>
+    <button class="nav-item" data-view="transactions">✏️ 记账</button>
+    <button class="nav-item" data-view="budget">🎯 预算</button>
   </nav>
-  <div class="side-note">数据仅存本地<br>不上传任何服务器</div>
+  <div class="side-note">🔒 数据仅存本地<br>不上传任何服务器</div>
 </aside>
 
 <main class="main">
   <!-- ============ 总览 ============ -->
   <section class="view active" id="view-dashboard">
+    <div class="page-head">
+      <div>
+        <h1>早上好 👋</h1>
+        <div class="sub" id="dashGreeting">来看看这个月的财务状况吧</div>
+      </div>
+      <span class="welcome-pill" id="dashCount">✨ 已记账 0 笔</span>
+    </div>
     <div class="kpis">
-      <div class="card kpi"><span class="kpi-label">本月收入</span><span class="kpi-value income" id="kpiIncome">¥0</span></div>
-      <div class="card kpi"><span class="kpi-label">本月支出</span><span class="kpi-value expense" id="kpiExpense">¥0</span></div>
-      <div class="card kpi"><span class="kpi-label">本月结余</span><span class="kpi-value" id="kpiNet">¥0</span></div>
-      <div class="card kpi"><span class="kpi-label">预算使用</span><span class="kpi-value" id="kpiBudget">—</span></div>
+      <div class="card kpi">
+        <div class="kpi-icon blue">💰</div>
+        <span class="kpi-label">本月收入</span>
+        <span class="kpi-value income" id="kpiIncome">¥0</span>
+        <span class="kpi-delta up" id="kpiIncomeDelta">▲ 0</span>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-icon red">🛒</div>
+        <span class="kpi-label">本月支出</span>
+        <span class="kpi-value expense" id="kpiExpense">¥0</span>
+        <span class="kpi-delta down" id="kpiExpenseDelta">▼ 0</span>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-icon green">🌱</div>
+        <span class="kpi-label">本月结余</span>
+        <span class="kpi-value" id="kpiNet">¥0</span>
+        <span class="kpi-delta up" id="kpiNetDelta">储蓄率 —</span>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-icon amber">🎯</div>
+        <span class="kpi-label">预算使用</span>
+        <span class="kpi-value" id="kpiBudget">未设置</span>
+        <span class="kpi-delta" id="kpiBudgetDelta">去「预算」页设置</span>
+      </div>
     </div>
     <div class="grid2">
-      <div class="card"><div class="card-title">近 6 月收支趋势</div><div class="chart-box"><canvas id="trendChart"></canvas></div></div>
-      <div class="card"><div class="card-title">本月支出分类占比</div><div class="chart-box"><canvas id="pieChart"></canvas></div></div>
+      <div class="card">
+        <div class="card-title-row"><div class="card-title">近 6 月收支趋势</div><span class="muted">收入 vs 支出</span></div>
+        <div class="chart-box"><canvas id="trendChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title-row"><div class="card-title">本月支出分类</div><span class="muted" id="pieTotal"></span></div>
+        <div class="chart-box"><canvas id="pieChart"></canvas></div>
+      </div>
     </div>
     <div class="card">
-      <div class="card-title-row"><div class="card-title">最近交易</div><button class="btn btn-ghost" id="btnGoTx">查看全部 →</button></div>
+      <div class="card-title-row">
+        <div class="card-title">最近交易</div>
+        <button class="btn" id="btnGoTx">查看全部 →</button>
+      </div>
       <div id="recentTx"></div>
     </div>
   </section>
 
   <!-- ============ 记账 ============ -->
   <section class="view" id="view-transactions">
+    <div class="page-head">
+      <div><h1>记一笔 ✏️</h1><div class="sub">30 秒记完今天的账</div></div>
+    </div>
     <div class="card">
       <div class="card-title-row">
         <div class="card-title">记一笔</div>
@@ -54,16 +95,16 @@
         </div>
       </div>
       <div class="tx-form">
-        <div class="seg" id="txTypeSeg">
+        <div class="seg" id="txTypeSeg" style="grid-column:1/-1">
           <button class="seg-btn active" data-tx-type="expense">支出</button>
           <button class="seg-btn" data-tx-type="income">收入</button>
         </div>
         <label class="field"><span>金额 (¥)</span><input type="number" id="txAmount" class="input big" min="0" step="0.01" placeholder="0.00"></label>
         <label class="field"><span>分类</span><select id="txCategory" class="input"></select></label>
         <label class="field"><span>日期</span><input type="date" id="txDate" class="input"></label>
-        <label class="field"><span>备注</span><input type="text" id="txNote" class="input" placeholder="可选"></label>
+        <label class="field"><span>备注</span><input type="text" id="txNote" class="input" placeholder="写点什么…"></label>
         <div class="form-actions">
-          <button class="btn btn-primary" id="txSave">保存这笔</button>
+          <button class="btn btn-primary" id="txSave">💾 保存这笔</button>
           <button class="btn btn-ghost" id="txReset">清空</button>
         </div>
       </div>
@@ -88,34 +129,22 @@
 
   <!-- ============ 预算 ============ -->
   <section class="view" id="view-budget">
+    <div class="page-head">
+      <div><h1>分类预算 🎯</h1><div class="sub" id="budgetMonthLabel"></div></div>
+    </div>
     <div class="card">
       <div class="card-title-row">
-        <div class="card-title">每月分类预算 <span class="muted" id="budgetMonthLabel"></span></div>
-        <button class="btn btn-primary" id="budgetSave">保存预算</button>
+        <div class="card-title">每月分类预算</div>
+        <button class="btn btn-primary" id="budgetSave">💾 保存预算</button>
       </div>
-      <p class="muted">预算为每月固定额度，留空表示该分类不设预算。填入金额后点「保存预算」。</p>
+      <p class="muted" style="margin-bottom:14px">预算为每月固定额度，留空表示该分类不设预算。填入金额后点「保存预算」。</p>
       <div class="budget-form" id="budgetForm"></div>
       <div class="budget-summary" id="budgetSummary"></div>
-    </div>
-  </section>
-
-  <!-- ============ 数据管理 ============ -->
-  <section class="view" id="view-settings">
-    <div class="card">
-      <div class="card-title">数据管理</div>
-      <p class="muted">所有数据仅存储在你的浏览器本地（localStorage），不会上传到任何服务器。换设备或清缓存前请先导出备份。</p>
-      <div class="settings-row">
-        <button class="btn btn-ghost" id="btnExport">⬇ 导出数据 (JSON)</button>
-        <button class="btn btn-ghost" id="btnImport">⬆ 导入数据</button>
-        <button class="btn btn-ghost" id="btnSample">✦ 载入示例数据</button>
-        <button class="btn btn-danger" id="btnClear">✕ 清空全部数据</button>
-      </div>
-      <input type="file" id="importFile" accept=".json" class="hidden-file">
     </div>
   </section>
 </main>
 
 <div id="toast"></div>
-<script src="app.js?v=20260806f"></script>
+<script src="app.js?v=20260806g"></script>
 </body>
 </html>

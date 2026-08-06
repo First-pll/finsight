@@ -1,4 +1,4 @@
-/* ================= FinSight 个人理财仪表盘 =================
+/* ================= 财政大臣 个人理财仪表盘 =================
    纯前端 + localStorage。无弹窗、无 alert/prompt/confirm，所有操作内联反馈。 */
 'use strict';
 
@@ -102,8 +102,39 @@ function renderDashboard() {
   $('kpiExpense').textContent = fmtMoney(s.expense);
   $('kpiNet').textContent = fmtMoney(s.net);
 
+  // 问候语（按时段）
+  const h = new Date().getHours();
+  const greet = h < 6 ? '夜深了 🌙' : h < 12 ? '早上好 👋' : h < 18 ? '下午好 ☀️' : '晚上好 🌆';
+  const h1 = document.querySelector('#view-dashboard h1');
+  if (h1) h1.textContent = greet;
+
+  // 记账笔数
+  const totalCount = state.transactions.length;
+  const countEl = $('dashCount');
+  if (countEl) countEl.textContent = totalCount ? `✨ 已记账 ${totalCount} 笔` : '✨ 从记第一笔开始';
+
+  // 较上月对比
+  const prevYm = shiftMonth(currentMonth, -1);
+  const ps = monthStats(prevYm);
+  const incDelta = ps.income > 0 ? Math.round((s.income - ps.income) / ps.income * 100) : (s.income > 0 ? 100 : 0);
+  const expDelta = ps.expense > 0 ? Math.round((s.expense - ps.expense) / ps.expense * 100) : 0;
+  const incEl = $('kpiIncomeDelta');
+  if (incEl) incEl.textContent = s.income === 0 && ps.income === 0 ? '本月暂无收入' : (incDelta >= 0 ? `▲ 较上月 +${incDelta}%` : `▼ 较上月 ${incDelta}%`);
+  const expEl = $('kpiExpenseDelta');
+  if (expEl) expEl.textContent = expDelta === 0 && ps.expense === 0 ? '本月暂无支出' : (expDelta <= 0 ? `▼ 较上月 ${expDelta}%` : `▲ 较上月 +${expDelta}%`);
+
+  // 储蓄率
+  const netEl = $('kpiNetDelta');
+  if (netEl) {
+    if (s.income > 0) netEl.textContent = `储蓄率 ${Math.max(0, Math.round(s.net / s.income * 100))}%`;
+    else netEl.textContent = '—';
+  }
+
+  // 预算
   const bKeys = Object.keys(state.budgets);
   const bTotal = bKeys.reduce((a, k) => a + (Number(state.budgets[k]) || 0), 0);
+  const budgetEl = $('kpiBudget');
+  const budgetSubEl = $('kpiBudgetDelta');
   if (bTotal > 0) {
     const spent = Object.keys(state.budgets).reduce((a, k) => {
       const cat = state.budgets[k];
@@ -111,9 +142,15 @@ function renderDashboard() {
         .reduce((x, t) => x + (Number(t.amount) || 0), 0);
       return a + Math.min(spentCat, cat);
     }, 0);
-    $('kpiBudget').textContent = Math.round(spent / bTotal * 100) + '%';
+    budgetEl.textContent = Math.round(spent / bTotal * 100) + '%';
+    if (budgetSubEl) {
+      const remain = bTotal - spent;
+      budgetSubEl.textContent = remain >= 0 ? `剩余 ${fmtMoney0(remain)}` : `超支 ${fmtMoney0(-remain)}`;
+      budgetSubEl.style.color = remain < 0 ? 'var(--expense)' : '';
+    }
   } else {
-    $('kpiBudget').textContent = '未设置';
+    budgetEl.textContent = '未设置';
+    if (budgetSubEl) { budgetSubEl.textContent = '去「预算」页设置'; budgetSubEl.style.color = ''; }
   }
 
   renderTrendChart();
@@ -132,15 +169,15 @@ function renderTrendChart() {
   const cfg = {
     type: 'line',
     data: { labels, datasets: [
-      { label: '收入', data: income, borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.12)', tension: .35, fill: true, pointRadius: 3 },
-      { label: '支出', data: expense, borderColor: '#fb7185', backgroundColor: 'rgba(251,113,133,.1)', tension: .35, fill: true, pointRadius: 3 },
+      { label: '收入', data: income, borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,.10)', tension: .35, fill: true, pointRadius: 3, pointBackgroundColor: '#fff', pointBorderColor: '#16a34a', pointBorderWidth: 2 },
+      { label: '支出', data: expense, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,.07)', tension: .35, fill: true, pointRadius: 3, pointBackgroundColor: '#fff', pointBorderColor: '#ef4444', pointBorderWidth: 2 },
     ] },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#8b9ac2' } } },
+      plugins: { legend: { labels: { color: '#7a8499', usePointStyle: true, boxWidth: 6, boxHeight: 6 } } },
       scales: {
-        x: { ticks: { color: '#8b9ac2' }, grid: { color: 'rgba(36,50,82,.4)' } },
-        y: { ticks: { color: '#8b9ac2' }, grid: { color: 'rgba(36,50,82,.4)' } },
+        x: { ticks: { color: '#7a8499' }, grid: { color: 'rgba(28,35,51,.06)' } },
+        y: { ticks: { color: '#7a8499' }, grid: { color: 'rgba(28,35,51,.06)' } },
       },
     },
   };
@@ -155,19 +192,53 @@ function renderPieChart() {
   const entries = Object.entries(spent).sort((a, b) => b[1] - a[1]).slice(0, 7);
   const labels = entries.map(e => e[0]);
   const data = entries.map(e => Math.round(e[1]));
-  const palette = ['#34d399', '#2dd4bf', '#fb7185', '#fbbf24', '#818cf8', '#f472b6', '#22d3ee'];
+  const totalEl = $('pieTotal');
+  if (totalEl) totalEl.textContent = '共 ' + fmtMoney0(Object.values(spent).reduce((a, b) => a + b, 0));
+
+  // 无支出数据：销毁图表并显示空状态，避免 Chart.js 空数据导致数据集被标记 hidden
+  if (!data.length) {
+    if (charts.chartPie) { charts.chartPie.destroy(); charts.chartPie = null; }
+    const box = $('pieChart');
+    const wrap = box && box.parentNode;
+    if (wrap && !wrap.querySelector('.empty')) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.style.position = 'absolute';
+      empty.style.inset = '0';
+      empty.style.display = 'flex';
+      empty.style.alignItems = 'center';
+      empty.style.justifyContent = 'center';
+      empty.textContent = '本月还没有支出\n记一笔后这里会显示分类占比';
+      wrap.appendChild(empty);
+    }
+    return;
+  }
+
+  // 有数据：清掉空状态占位
+  const box = $('pieChart');
+  const wrap = box && box.parentNode;
+  const emptyEl = wrap && wrap.querySelector('.empty');
+  if (emptyEl) emptyEl.remove();
+
+  const palette = ['#4f6ef7', '#8b5cf6', '#22c55e', '#f59e0b', '#06b6d4', '#f472b6', '#14b8a6'];
   const cfg = {
     type: 'doughnut',
     data: { labels, datasets: [{ data, backgroundColor: palette.slice(0, data.length), borderWidth: 0 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { position: 'right', labels: { color: '#8b9ac2', boxWidth: 10 } },
+        legend: { position: 'right', labels: { color: '#7a8499', boxWidth: 10, usePointStyle: true, boxHeight: 6 } },
       },
     },
   };
-  if (charts.chartPie) { charts.chartPie.data = cfg.data; charts.chartPie.update(); }
-  else charts.chartPie = new Chart($('pieChart'), cfg);
+  if (charts.chartPie) {
+    charts.chartPie.data = cfg.data;
+    charts.chartPie.options = cfg.options;
+    charts.chartPie.data.datasets.forEach(ds => { ds.hidden = false; });
+    charts.chartPie.update();
+  } else {
+    charts.chartPie = new Chart($('pieChart'), cfg);
+  }
 }
 function renderRecentTx() {
   const recent = [...state.transactions].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt).slice(0, 6);
@@ -175,7 +246,7 @@ function renderRecentTx() {
   if (!recent.length) { box.innerHTML = '<div class="empty">还没有记录，去「记账」页记第一笔吧</div>'; return; }
   box.innerHTML = recent.map(t => {
     const cat = [...EXPENSE_CATS, ...INCOME_CATS].find(c => c.name === t.category);
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px solid rgba(36,50,82,.5);font-size:13.5px;">
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px solid #f0f3f9;font-size:13.5px;">
       <span>${cat ? cat.emoji : '📌'} ${esc(t.category)} <span class="muted">${esc(t.note || '')} · ${t.date}</span></span>
       <span class="${t.type === 'income' ? 'income' : 'expense'}" style="font-weight:700;">${t.type === 'income' ? '+' : '-'}${fmtMoney0(t.amount)}</span>
     </div>`;
@@ -210,6 +281,7 @@ function saveTx() {
   resetTxForm();
   renderTxTable();
   renderBudget();
+  renderDashboard();
 }
 function renderTxTable() {
   const ft = $('filterType').value;
@@ -236,7 +308,7 @@ function renderTxTable() {
   }).join('');
   body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
     state.transactions = state.transactions.filter(x => x.id !== b.dataset.del);
-    save(); renderTxTable(); renderBudget(); showToast('已删除');
+    save(); renderTxTable(); renderBudget(); renderDashboard(); showToast('已删除');
   });
 }
 
@@ -285,58 +357,6 @@ function saveBudget() {
   renderDashboard();
 }
 
-/* ================= 数据管理 ================= */
-function exportData() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'finsight-backup-' + todayStr() + '.json';
-  a.click();
-  showToast('已导出备份文件');
-}
-function importData(file) {
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const parsed = JSON.parse(e.target.result);
-      if (!parsed || !Array.isArray(parsed.transactions)) { showToast('导入失败：文件格式不正确'); return; }
-      state = { transactions: parsed.transactions, budgets: parsed.budgets || {} };
-      save(); renderDashboard(); renderTxTable(); renderBudget();
-      showToast('导入成功 ✓ 数据已更新');
-    } catch (err) { showToast('导入失败：文件无法解析'); }
-  };
-  reader.readAsText(file);
-}
-function loadSample() {
-  const today = todayStr();
-  const sample = [];
-  for (let i = 0; i < 60; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - Math.floor(Math.random() * 90));
-    const cat = EXPENSE_CATS[Math.floor(Math.random() * EXPENSE_CATS.length)];
-    sample.push({
-      id: uid(), type: 'expense', category: cat.name,
-      amount: Math.round((20 + Math.random() * 180) * 100) / 100,
-      date: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'),
-      note: '', createdAt: Date.now() - i * 3600000,
-    });
-  }
-  for (let i = 0; i < 8; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - Math.floor(Math.random() * 60));
-    sample.push({
-      id: uid(), type: 'income', category: '工资',
-      amount: 8000 + Math.floor(Math.random() * 2000),
-      date: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'),
-      note: '工资', createdAt: Date.now() - i * 3600000,
-    });
-  }
-  state.transactions = sample;
-  state.budgets = { 餐饮: 1800, 交通: 400, 购物: 1200, 娱乐: 500, 住房: 3000, 水电: 250, 教育: 800 };
-  save(); renderDashboard(); renderTxTable(); renderBudget();
-  showToast('示例数据已载入 ✦');
-}
-
 /* ================= 初始化 ================= */
 function init() {
   // 导航
@@ -365,18 +385,6 @@ function init() {
 
   // 预算
   $('budgetSave').onclick = saveBudget;
-
-  // 数据管理
-  $('btnExport').onclick = exportData;
-  $('btnImport').onclick = () => $('importFile').click();
-  $('importFile').onchange = e => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; };
-  $('btnSample').onclick = loadSample;
-  $('btnClear').onclick = () => {
-    if (state.transactions.length === 0) { showToast('数据本来就是空的'); return; }
-    state = { transactions: [], budgets: {} };
-    save(); renderDashboard(); renderTxTable(); renderBudget();
-    showToast('已清空全部数据');
-  };
 
   // 初始渲染
   fillFilterCategory();
